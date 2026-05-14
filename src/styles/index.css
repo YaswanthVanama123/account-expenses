@@ -272,7 +272,6 @@ a:hover { text-decoration: underline; }
   letter-spacing: 0.08em;
 }
 .bubble {
-  position: relative;
   display: flex; gap: 12px; align-items: flex-start;
   padding: 12px;
   border-radius: 16px;
@@ -314,20 +313,16 @@ a:hover { text-decoration: underline; }
 .notes { overflow: hidden; text-overflow: ellipsis; }
 .bubble-time { color: var(--muted); font-size: 11px; margin-top: 4px; }
 .bubble-del {
-  position: absolute;
-  top: 8px; right: 8px;
-  width: 28px; height: 28px;
-  border-radius: 8px;
+  align-self: center;
+  flex-shrink: 0;
+  width: 32px; height: 32px;
+  border-radius: 10px;
   display: grid; place-items: center;
   color: var(--muted);
-  opacity: 0;
-  transition: opacity 0.15s, background 0.15s;
+  background: rgba(255, 255, 255, 0.04);
+  transition: background 0.15s, color 0.15s;
 }
-.bubble:hover .bubble-del { opacity: 1; }
 .bubble-del:hover { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
-@media (hover: none) {
-  .bubble-del { opacity: 1; }
-}
 
 /* Empty */
 .empty {

@@ -17,7 +17,7 @@ import ConfirmModal from './ConfirmModal.jsx'
 const fmt = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
 
 export default function Dashboard() {
-  const { user, logout } = useAuth()
+  const { user, displayName, logout } = useAuth()
   const [tx, setTx] = useState([])
   const [people, setPeople] = useState([])
   const [cats, setCats] = useState([])
@@ -109,7 +109,7 @@ export default function Dashboard() {
       <header className="topbar">
         <div className="topbar-inner">
           <div>
-            <div className="hello">Hi {user?.displayName || user?.email?.split('@')[0]}</div>
+            <div className="hello">Hi {displayName}</div>
             <div className="muted small">Your ledger</div>
           </div>
           <button className="icon-btn" onClick={() => setMenuOpen(o => !o)} aria-label="Menu">

@@ -3,9 +3,10 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
-  onAuthStateChanged
+  onAuthStateChanged,
+  updateProfile
 } from 'firebase/auth'
-import { doc, setDoc, collection, getDocs, writeBatch } from 'firebase/firestore'
+import { doc, setDoc, getDoc, collection, getDocs, writeBatch } from 'firebase/firestore'
 import { auth, db } from '../firebase.js'
 
 const AuthContext = createContext(null)
@@ -35,6 +36,7 @@ async function seedDefaults(uid) {
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
+  const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -45,14 +47,29 @@ export function AuthProvider({ children }) {
     return unsub
   }, [])
 
+  useEffect(() => {
+    if (!user) { setProfile(null); return }
+    let cancelled = false
+    getDoc(doc(db, 'users', user.uid)).then(snap => {
+      if (cancelled) return
+      if (snap.exists()) setProfile(snap.data())
+      else setProfile(null)
+    })
+    return () => { cancelled = true }
+  }, [user])
+
   async function signup(email, password, displayName) {
     const cred = await createUserWithEmailAndPassword(auth, email, password)
+    const name = displayName?.trim() || email.split('@')[0]
+    await updateProfile(cred.user, { displayName: name })
     await setDoc(doc(db, 'users', cred.user.uid), {
       email,
-      displayName: displayName || email.split('@')[0],
+      displayName: name,
       createdAt: Date.now()
     })
     await seedDefaults(cred.user.uid)
+    setUser({ ...cred.user, displayName: name })
+    setProfile({ email, displayName: name, createdAt: Date.now() })
     return cred.user
   }
 
@@ -66,8 +83,12 @@ export function AuthProvider({ children }) {
     return signOut(auth)
   }
 
+  const displayName = user
+    ? (user.displayName || profile?.displayName || user.email?.split('@')[0])
+    : null
+
   return (
-    <AuthContext.Provider value={{ user, loading, signup, login, logout }}>
+    <AuthContext.Provider value={{ user, profile, displayName, loading, signup, login, logout }}>
       {children}
     </AuthContext.Provider>
   )

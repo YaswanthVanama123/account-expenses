@@ -12,6 +12,7 @@ import { db } from '../firebase.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import TransactionForm from './TransactionForm.jsx'
 import BottomNav from './BottomNav.jsx'
+import ConfirmModal from './ConfirmModal.jsx'
 
 const fmt = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
 
@@ -24,6 +25,11 @@ export default function Dashboard() {
   const [editing, setEditing] = useState(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [filter, setFilter] = useState('all')
+  const [personFilter, setPersonFilter] = useState('all')
+  const [dateFilter, setDateFilter] = useState('all')
+  const [customStart, setCustomStart] = useState('')
+  const [customEnd, setCustomEnd] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(null)
 
   useEffect(() => {
     if (!user) return
@@ -50,20 +56,30 @@ export default function Dashboard() {
     return unsub
   }, [user])
 
+  const filtered = useMemo(() => {
+    const { from, to } = dateRangeFor(dateFilter, customStart, customEnd)
+    return tx.filter(t => {
+      if (filter !== 'all' && t.type !== filter) return false
+      if (personFilter !== 'all' && t.personId !== personFilter) return false
+      if (from != null && t.createdAt < from) return false
+      if (to != null && t.createdAt > to) return false
+      return true
+    })
+  }, [tx, filter, personFilter, dateFilter, customStart, customEnd])
+
   const totals = useMemo(() => {
     let credit = 0, debit = 0
-    for (const t of tx) {
+    for (const t of filtered) {
       if (t.type === 'credit') credit += Number(t.amount) || 0
       else debit += Number(t.amount) || 0
     }
     return { credit, debit, net: credit - debit }
-  }, [tx])
+  }, [filtered])
 
   const grouped = useMemo(() => {
-    const visible = filter === 'all' ? tx : tx.filter(t => t.type === filter)
     const out = []
     let lastKey = null
-    for (const t of visible) {
+    for (const t of filtered) {
       const key = dayKey(t.createdAt)
       if (key !== lastKey) {
         out.push({ kind: 'header', key, label: dayLabel(t.createdAt) })
@@ -72,10 +88,9 @@ export default function Dashboard() {
       out.push({ kind: 'item', t })
     }
     return out
-  }, [tx, filter])
+  }, [filtered])
 
   async function remove(id) {
-    if (!confirm('Delete this entry?')) return
     await deleteDoc(doc(db, 'users', user.uid, 'transactions', id))
   }
 
@@ -132,6 +147,49 @@ export default function Dashboard() {
           <FilterChip active={filter === 'credit'} onClick={() => setFilter('credit')}>Credit</FilterChip>
           <FilterChip active={filter === 'debit'} onClick={() => setFilter('debit')}>Debit</FilterChip>
         </div>
+
+        <div className="ledger-filters">
+          <label className="ledger-select">
+            <span className="ls-label">Person</span>
+            <select value={personFilter} onChange={e => setPersonFilter(e.target.value)}>
+              <option value="all">Everyone</option>
+              {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </label>
+          <label className="ledger-select">
+            <span className="ls-label">When</span>
+            <select value={dateFilter} onChange={e => setDateFilter(e.target.value)}>
+              <option value="all">All time</option>
+              <option value="today">Today</option>
+              <option value="week">This week</option>
+              <option value="month">This month</option>
+              <option value="year">This year</option>
+              <option value="custom">Custom…</option>
+            </select>
+          </label>
+        </div>
+
+        {dateFilter === 'custom' && (
+          <div className="ledger-custom">
+            <label>
+              <span className="ls-label">From</span>
+              <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} />
+            </label>
+            <label>
+              <span className="ls-label">To</span>
+              <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} />
+            </label>
+          </div>
+        )}
+
+        {(personFilter !== 'all' || dateFilter !== 'all' || filter !== 'all') && (
+          <div className="filter-summary">
+            <span className="muted small">{filtered.length} of {tx.length} entries</span>
+            <button className="link-btn" onClick={() => {
+              setFilter('all'); setPersonFilter('all'); setDateFilter('all'); setCustomStart(''); setCustomEnd('')
+            }}>Clear filters</button>
+          </div>
+        )}
       </header>
 
       <main className="feed">
@@ -146,7 +204,7 @@ export default function Dashboard() {
         {grouped.map((g, i) => (
           g.kind === 'header'
             ? <div className="day-divider" key={g.key + i}>{g.label}</div>
-            : <TxBubble key={g.t.id} t={g.t} people={people} cats={cats} onEdit={() => startEdit(g.t)} onDelete={() => remove(g.t.id)} />
+            : <TxBubble key={g.t.id} t={g.t} people={people} cats={cats} onEdit={() => startEdit(g.t)} onDelete={() => setConfirmDelete(g.t)} />
         ))}
       </main>
 
@@ -164,9 +222,31 @@ export default function Dashboard() {
         />
       )}
 
+      <ConfirmModal
+        open={!!confirmDelete}
+        title="Delete this entry?"
+        message={confirmDelete ? `${describe(confirmDelete, people, cats)} — this can't be undone.` : ''}
+        confirmLabel="Delete"
+        cancelLabel="Keep it"
+        danger
+        onCancel={() => setConfirmDelete(null)}
+        onConfirm={async () => {
+          const id = confirmDelete.id
+          setConfirmDelete(null)
+          await remove(id)
+        }}
+      />
+
       <BottomNav />
     </div>
   )
+}
+
+function describe(t, people, cats) {
+  const p = people.find(x => x.id === t.personId)?.name || 'Someone'
+  const c = cats.find(x => x.id === t.categoryId)?.name || 'Other'
+  const sign = t.type === 'credit' ? '+' : '−'
+  return `${sign} ${fmt.format(Math.abs(Number(t.amount) || 0))} · ${p} · ${c}`
 }
 
 function TxBubble({ t, people, cats, onEdit, onDelete }) {
@@ -219,6 +299,36 @@ function dayLabel(ts) {
 }
 function timeLabel(ts) {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function dateRangeFor(kind, customStart, customEnd) {
+  const now = new Date()
+  if (kind === 'today') {
+    const s = new Date(now); s.setHours(0, 0, 0, 0)
+    const e = new Date(now); e.setHours(23, 59, 59, 999)
+    return { from: s.getTime(), to: e.getTime() }
+  }
+  if (kind === 'week') {
+    const s = new Date(now)
+    const dow = s.getDay()
+    s.setDate(s.getDate() - dow)
+    s.setHours(0, 0, 0, 0)
+    return { from: s.getTime(), to: null }
+  }
+  if (kind === 'month') {
+    const s = new Date(now.getFullYear(), now.getMonth(), 1)
+    return { from: s.getTime(), to: null }
+  }
+  if (kind === 'year') {
+    const s = new Date(now.getFullYear(), 0, 1)
+    return { from: s.getTime(), to: null }
+  }
+  if (kind === 'custom') {
+    const from = customStart ? new Date(customStart + 'T00:00:00').getTime() : null
+    const to = customEnd ? new Date(customEnd + 'T23:59:59.999').getTime() : null
+    return { from, to }
+  }
+  return { from: null, to: null }
 }
 
 function Plus() {

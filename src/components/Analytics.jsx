@@ -11,13 +11,7 @@ import HeatmapChart from './charts/HeatmapChart.jsx'
 import FiltersBar from './FiltersBar.jsx'
 import BottomNav from './BottomNav.jsx'
 
-const RANGES = {
-  '7d': 7,
-  '30d': 30,
-  '90d': 90,
-  '1y': 365,
-  all: null
-}
+const RANGE_DAYS = { '7d': 7, '30d': 30, '90d': 90, '1y': 365 }
 
 export default function Analytics() {
   const { user } = useAuth()
@@ -26,6 +20,8 @@ export default function Analytics() {
   const [cats, setCats] = useState([])
 
   const [range, setRange] = useState('30d')
+  const [customStart, setCustomStart] = useState('')
+  const [customEnd, setCustomEnd] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
   const [catFilter, setCatFilter] = useState(new Set())
   const [personFilter, setPersonFilter] = useState(new Set())
@@ -50,24 +46,25 @@ export default function Analytics() {
     )
   }, [user])
 
+  const window = useMemo(() => rangeWindow(range, customStart, customEnd, tx), [range, customStart, customEnd, tx])
+
   const filtered = useMemo(() => {
-    const days = RANGES[range]
-    const cutoff = days ? Date.now() - days * 86400000 : 0
     return tx.filter(t => {
-      if (t.createdAt < cutoff) return false
+      if (window.from != null && t.createdAt < window.from) return false
+      if (window.to != null && t.createdAt > window.to) return false
       if (typeFilter !== 'all' && t.type !== typeFilter) return false
       if (catFilter.size > 0 && !catFilter.has(t.categoryId)) return false
       if (personFilter.size > 0 && !personFilter.has(t.personId)) return false
       return true
     })
-  }, [tx, range, typeFilter, catFilter, personFilter])
+  }, [tx, window, typeFilter, catFilter, personFilter])
 
-  const stats = useMemo(() => computeStats(filtered, range), [filtered, range])
-  const trend = useMemo(() => computeTrend(filtered, range), [filtered, range])
+  const stats = useMemo(() => computeStats(filtered, window), [filtered, window])
+  const trend = useMemo(() => computeTrend(filtered, window, range), [filtered, window, range])
   const byCategory = useMemo(() => computeByCategory(filtered, cats), [filtered, cats])
   const byPerson = useMemo(() => computeByPerson(filtered, people), [filtered, people])
   const byWeekday = useMemo(() => computeByWeekday(filtered), [filtered])
-  const heatmap = useMemo(() => computeHeatmap(filtered, range), [filtered, range])
+  const heatmap = useMemo(() => computeHeatmap(filtered, window), [filtered, window])
 
   return (
     <div className="app-shell">
@@ -75,13 +72,15 @@ export default function Analytics() {
         <div className="topbar-inner">
           <div>
             <div className="hello">Analytics</div>
-            <div className="muted small">{filtered.length} entries · {labelForRange(range)}</div>
+            <div className="muted small">{filtered.length} entries · {labelForRange(range, window)}</div>
           </div>
         </div>
       </header>
 
       <FiltersBar
         range={range} setRange={setRange}
+        customStart={customStart} setCustomStart={setCustomStart}
+        customEnd={customEnd} setCustomEnd={setCustomEnd}
         typeFilter={typeFilter} setTypeFilter={setTypeFilter}
         cats={cats} catFilter={catFilter} setCatFilter={setCatFilter}
         people={people} personFilter={personFilter} setPersonFilter={setPersonFilter}
@@ -142,11 +141,35 @@ function Empty({ children }) {
   return <div className="chart-empty muted small">{children}</div>
 }
 
-function labelForRange(r) {
-  return ({ '7d': 'Last 7 days', '30d': 'Last 30 days', '90d': 'Last 90 days', '1y': 'Last year', all: 'All time' })[r]
+function rangeWindow(range, customStart, customEnd, list) {
+  const now = Date.now()
+  if (range === 'custom') {
+    const oldest = list.length ? Math.min(...list.map(t => t.createdAt)) : now
+    const from = customStart ? new Date(customStart + 'T00:00:00').getTime() : oldest
+    const to = customEnd ? new Date(customEnd + 'T23:59:59.999').getTime() : now
+    const days = Math.max(1, Math.ceil((to - from) / 86400000))
+    return { from, to, days }
+  }
+  if (range === 'all') {
+    const oldest = list.length ? Math.min(...list.map(t => t.createdAt)) : now
+    const days = Math.max(1, Math.ceil((now - oldest) / 86400000))
+    return { from: null, to: null, days }
+  }
+  const days = RANGE_DAYS[range]
+  return { from: now - days * 86400000, to: now, days }
 }
 
-function computeStats(list, range) {
+function labelForRange(range, window) {
+  if (range === 'custom') {
+    if (!window.from && !window.to) return 'Custom range'
+    const f = window.from ? new Date(window.from).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '…'
+    const t = window.to ? new Date(window.to).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : 'now'
+    return `${f} – ${t}`
+  }
+  return ({ '7d': 'Last 7 days', '30d': 'Last 30 days', '90d': 'Last 90 days', '1y': 'Last year', all: 'All time' })[range]
+}
+
+function computeStats(list, window) {
   let credit = 0, debit = 0, biggestDebit = 0, biggestCredit = 0
   for (const t of list) {
     const a = Number(t.amount) || 0
@@ -158,8 +181,7 @@ function computeStats(list, range) {
       if (a > biggestDebit) biggestDebit = a
     }
   }
-  const days = RANGES[range] || daysBetween(list)
-  const avgDay = days ? debit / Math.max(days, 1) : 0
+  const avgDay = debit / Math.max(window.days, 1)
   return {
     debit, credit,
     net: credit - debit,
@@ -170,18 +192,12 @@ function computeStats(list, range) {
   }
 }
 
-function daysBetween(list) {
-  if (list.length === 0) return 1
-  const oldest = Math.min(...list.map(t => t.createdAt))
-  return Math.max(1, Math.ceil((Date.now() - oldest) / 86400000))
-}
-
-function computeTrend(list, range) {
-  const days = RANGES[range] || Math.min(daysBetween(list), 365)
+function computeTrend(list, window, range) {
+  const days = Math.min(window.days, 365)
+  const end = window.to != null ? startOfDay(window.to) : startOfDay(Date.now())
   const buckets = {}
-  const today = startOfDay(Date.now())
   for (let i = days - 1; i >= 0; i--) {
-    const d = today - i * 86400000
+    const d = end - i * 86400000
     buckets[d] = { date: d, credit: 0, debit: 0 }
   }
   for (const t of list) {
@@ -193,7 +209,7 @@ function computeTrend(list, range) {
   const points = Object.values(buckets).sort((a, b) => a.date - b.date)
   return {
     points,
-    subtitle: range === 'all' ? `${points.length} day window` : labelForRange(range)
+    subtitle: range === 'custom' ? labelForRange(range, window) : (range === 'all' ? `${points.length} day window` : labelForRange(range, window))
   }
 }
 
@@ -253,10 +269,10 @@ function computeByWeekday(list) {
   return out
 }
 
-function computeHeatmap(list, range) {
-  const days = Math.min(RANGES[range] || 365, 365)
-  const today = startOfDay(Date.now())
-  const start = today - (days - 1) * 86400000
+function computeHeatmap(list, window) {
+  const days = Math.min(window.days, 365)
+  const end = window.to != null ? startOfDay(window.to) : startOfDay(Date.now())
+  const start = end - (days - 1) * 86400000
   const map = {}
   for (let i = 0; i < days; i++) map[start + i * 86400000] = 0
   for (const t of list) {

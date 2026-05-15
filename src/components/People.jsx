@@ -11,6 +11,7 @@ import {
 import { db } from '../firebase.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import BottomNav from './BottomNav.jsx'
+import ConfirmModal from './ConfirmModal.jsx'
 
 export default function People() {
   const { user } = useAuth()
@@ -19,6 +20,7 @@ export default function People() {
   const [editingId, setEditingId] = useState(null)
   const [editingName, setEditingName] = useState('')
   const [busy, setBusy] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(null)
 
   useEffect(() => {
     if (!user) return
@@ -51,7 +53,6 @@ export default function People() {
   }
 
   async function remove(id) {
-    if (!confirm('Remove this person? Existing entries will keep their reference.')) return
     await deleteDoc(doc(db, 'users', user.uid, 'people', id))
   }
 
@@ -102,13 +103,28 @@ export default function People() {
                 <>
                   <div className="list-name">{p.name}</div>
                   <button className="link-btn" onClick={() => { setEditingId(p.id); setEditingName(p.name) }}>Edit</button>
-                  <button className="link-btn danger" onClick={() => remove(p.id)}>Delete</button>
+                  <button className="link-btn danger" onClick={() => setConfirmDelete(p)}>Delete</button>
                 </>
               )}
             </li>
           ))}
         </ul>
       </main>
+
+      <ConfirmModal
+        open={!!confirmDelete}
+        title="Remove this person?"
+        message={confirmDelete ? `${confirmDelete.name} will be removed. Existing entries will keep their reference.` : ''}
+        confirmLabel="Remove"
+        cancelLabel="Cancel"
+        danger
+        onCancel={() => setConfirmDelete(null)}
+        onConfirm={async () => {
+          const id = confirmDelete.id
+          setConfirmDelete(null)
+          await remove(id)
+        }}
+      />
 
       <BottomNav />
     </div>

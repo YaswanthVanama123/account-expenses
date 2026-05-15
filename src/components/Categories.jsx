@@ -11,6 +11,7 @@ import {
 import { db } from '../firebase.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import BottomNav from './BottomNav.jsx'
+import ConfirmModal from './ConfirmModal.jsx'
 
 const ICONS = ['🍔', '✈️', '🛍️', '💡', '🏠', '💊', '💼', '🚗', '🎬', '🎓', '🎁', '☕', '⚽', '🐾', '🛒', '✨']
 const COLORS = ['#f97316', '#06b6d4', '#ec4899', '#eab308', '#8b5cf6', '#ef4444', '#10b981', '#3b82f6', '#a855f7', '#14b8a6', '#f43f5e', '#64748b']
@@ -23,6 +24,7 @@ export default function Categories() {
   const [color, setColor] = useState(COLORS[0])
   const [editingId, setEditingId] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(null)
 
   useEffect(() => {
     if (!user) return
@@ -68,7 +70,6 @@ export default function Categories() {
   }
 
   async function remove(id) {
-    if (!confirm('Remove this category?')) return
     await deleteDoc(doc(db, 'users', user.uid, 'categories', id))
   }
 
@@ -118,11 +119,26 @@ export default function Categories() {
               <div className="avatar" style={{ background: c.color }}>{c.icon}</div>
               <div className="list-name">{c.name}</div>
               <button className="link-btn" onClick={() => startEdit(c)}>Edit</button>
-              <button className="link-btn danger" onClick={() => remove(c.id)}>Delete</button>
+              <button className="link-btn danger" onClick={() => setConfirmDelete(c)}>Delete</button>
             </li>
           ))}
         </ul>
       </main>
+
+      <ConfirmModal
+        open={!!confirmDelete}
+        title="Remove this category?"
+        message={confirmDelete ? `${confirmDelete.icon} ${confirmDelete.name} will be removed.` : ''}
+        confirmLabel="Remove"
+        cancelLabel="Cancel"
+        danger
+        onCancel={() => setConfirmDelete(null)}
+        onConfirm={async () => {
+          const id = confirmDelete.id
+          setConfirmDelete(null)
+          await remove(id)
+        }}
+      />
 
       <BottomNav />
     </div>

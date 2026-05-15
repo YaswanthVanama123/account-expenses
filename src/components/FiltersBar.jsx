@@ -2,6 +2,8 @@ import { useState } from 'react'
 
 export default function FiltersBar({
   range, setRange,
+  customStart, setCustomStart,
+  customEnd, setCustomEnd,
   typeFilter, setTypeFilter,
   cats, catFilter, setCatFilter,
   people, personFilter, setPersonFilter
@@ -18,7 +20,7 @@ export default function FiltersBar({
   return (
     <div className="filters-bar">
       <div className="chip-row">
-        {[['7d', '7D'], ['30d', '30D'], ['90d', '90D'], ['1y', '1Y'], ['all', 'All']].map(([k, l]) => (
+        {[['7d', '7D'], ['30d', '30D'], ['90d', '90D'], ['1y', '1Y'], ['all', 'All'], ['custom', 'Custom']].map(([k, l]) => (
           <button key={k} className={`chip ${range === k ? 'active' : ''}`} onClick={() => setRange(k)}>{l}</button>
         ))}
         <span className="chip-divider" />
@@ -36,6 +38,19 @@ export default function FiltersBar({
           <button className="chip ghost" onClick={() => { setCatFilter(new Set()); setPersonFilter(new Set()) }}>Reset</button>
         )}
       </div>
+
+      {range === 'custom' && (
+        <div className="ledger-custom" style={{ marginTop: 10 }}>
+          <label>
+            <span className="ls-label">From</span>
+            <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} />
+          </label>
+          <label>
+            <span className="ls-label">To</span>
+            <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} />
+          </label>
+        </div>
+      )}
 
       {open === 'cat' && (
         <div className="filter-panel">
